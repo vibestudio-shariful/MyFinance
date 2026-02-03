@@ -34,6 +34,7 @@ jobs:
 
       - name: Build with Gradle
         run: |
+          npm install @capacitor/cli @capacitor/core @capacitor/android
           npx cap sync
           cd android
           chmod +x gradlew
