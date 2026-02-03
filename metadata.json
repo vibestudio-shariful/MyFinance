@@ -1,0 +1,7 @@
+{
+  "name": "My Finance",
+  "description": "A comprehensive personal finance manager for tracking income, expenses, savings, and debts with backup and restore capabilities.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
