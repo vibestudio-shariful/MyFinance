@@ -426,7 +426,7 @@ const App: React.FC = () => {
         >
           <Plus size={24} />
         </button>
-        <NavBtn active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} icon={<Landmark size={20} />} label={t.savings} />
+        <NavBtn active={activeTab === 'savings'} onClick={() => setActiveTab('savings'} icon={<Landmark size={20} />} label={t.savings} />
         <NavBtn active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircle size={20} />} label={t.profile} />
       </div>
 
