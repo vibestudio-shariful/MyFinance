@@ -39,6 +39,10 @@ jobs:
           if [ ! -d "android" ]; then
             npx cap add android
           fi
+          
+          # Kotlin Duplicate Class Fix
+          echo "configurations.all { resolutionStrategy.eachDependency { DependencyResolveDetails details -> if (details.requested.group == 'org.jetbrains.kotlin') { details.useVersion '1.8.22' } } }" >> android/app/build.gradle
+          
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
