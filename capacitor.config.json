@@ -1,0 +1,6 @@
+{
+  "appId": "com.vibestudio.myfinance",
+  "appName": "MyFinance",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
