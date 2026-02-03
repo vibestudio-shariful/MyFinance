@@ -24,7 +24,9 @@ import {
   Sun,
   UserPlus,
   ArrowRight,
-  Pencil
+  Pencil,
+  FileJson,
+  Database
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, isWithinInterval, parseISO } from 'date-fns';
 import { Transaction, Saving, Debt, UserProfile, AppData, TransactionType, Settings, DebtActionType } from './types';
@@ -88,7 +90,10 @@ const translations = {
     developerInfo: "ডেভেলপার তথ্য",
     backup: "ব্যাকআপ ও রিস্টোর",
     fullBackup: "ফুল ব্যাকআপ এক্সপোর্ট",
-    fullRestore: "ফুল ব্যাকআপ রিস্টোর",
+    transactionsBackup: "লেনদেন ব্যাকআপ",
+    savingsBackup: "সঞ্চয় ব্যাকআপ",
+    debtsBackup: "দেনাপাওনা ব্যাকআপ",
+    fullRestore: "ব্যাকআপ রিস্টোর",
     noData: "কোন তথ্য নেই",
     taka: "৳",
     parties: "দেনাপাওনা",
@@ -102,7 +107,8 @@ const translations = {
     handCash: "বর্তমানে হাতে আছে",
     edit: "সম্পাদনা",
     incomeList: "আয়ের তালিকা",
-    expenseList: "ব্যয়ের তালিকা"
+    expenseList: "ব্যয়ের তালিকা",
+    selectiveBackup: "আলাদা ব্যাকআপ করুন"
   },
   en: {
     home: "Home",
@@ -138,7 +144,10 @@ const translations = {
     developerInfo: "Developer Info",
     backup: "Backup & Restore",
     fullBackup: "Full Backup Export",
-    fullRestore: "Full Backup Restore",
+    transactionsBackup: "Transactions Backup",
+    savingsBackup: "Savings Backup",
+    debtsBackup: "Debts Backup",
+    fullRestore: "Restore Backup",
     noData: "No data found",
     taka: "৳",
     parties: "Debts",
@@ -152,7 +161,8 @@ const translations = {
     handCash: "Hand Cash Available",
     edit: "Edit",
     incomeList: "Income List",
-    expenseList: "Expense List"
+    expenseList: "Expense List",
+    selectiveBackup: "Selective Backup"
   }
 };
 
@@ -196,13 +206,56 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    if (data.settings.theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (data.settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', '#020617'); 
+    } else {
+      document.documentElement.classList.remove('dark');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', '#f8fafc'); 
+    }
   }, [data]);
 
   const triggerToast = (message: string, type: 'success' | 'error' = 'success') => {
     setShowToast({ message, type });
     setTimeout(() => setShowToast(null), 3000);
+  };
+
+  const handleExport = async (type: 'all' | 'transactions' | 'savings' | 'debts') => {
+    const exportData = type === 'all' ? data : data[type as keyof AppData];
+    const content = JSON.stringify(exportData, null, 2);
+    const fileName = `finance_${type}_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
+
+    // Try to use File System Access API for location selection
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'JSON Files',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        triggerToast(t.confirm);
+        return;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        // Fallback to regular download if API fails or user cancels differently
+      }
+    }
+
+    // Standard Fallback Download
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+    triggerToast(t.confirm);
   };
 
   const filteredTransactions = useMemo(() => {
@@ -331,28 +384,27 @@ const App: React.FC = () => {
             onUpdateProfile={(p: UserProfile) => setData(prev => ({ ...prev, profile: p }))}
             onLang={toggleLanguage} onTheme={toggleTheme}
             onDev={() => { setModalType('dev'); setIsModalOpen(true); }}
-            onExport={(type: any) => {
-              const content = JSON.stringify(type === 'all' ? data : data[type as keyof AppData], null, 2);
-              const blob = new Blob([content], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `backup_${type}_${format(new Date(), 'yyyy-MM-dd')}.json`;
-              link.click();
-              URL.revokeObjectURL(url);
-              triggerToast(t.confirm);
-            }}
-            onImport={(e: any, type: any) => {
+            onExport={handleExport}
+            onImport={(e: any) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 const r = new FileReader();
                 r.onload = (ev) => {
                     try {
                         const json = JSON.parse(ev.target?.result as string);
-                        if (type === 'all') setData(json);
-                        else setData(prev => ({ ...prev, [type]: [...json, ...(prev[type] as any[])] }));
+                        // Simple validation check: if it has profile/settings, it's likely a full backup
+                        if (json.settings && json.profile) {
+                          setData(json);
+                        } else if (Array.isArray(json)) {
+                          // Could be a selective backup (array of items)
+                          // Heuristic check to decide where to put items
+                          const first = json[0];
+                          if (first?.personName) setData(prev => ({ ...prev, debts: [...json, ...prev.debts] }));
+                          else if (first?.type === 'INCOME' || first?.type === 'EXPENSE') setData(prev => ({ ...prev, transactions: [...json, ...prev.transactions] }));
+                          else if (first?.type === 'ADD' || first?.type === 'SUBTRACT') setData(prev => ({ ...prev, savings: [...json, ...prev.savings] }));
+                        }
                         triggerToast(t.confirm);
-                    } catch { triggerToast("Error", "error"); }
+                    } catch { triggerToast("Error Parsing Backup", "error"); }
                 };
                 r.readAsText(file);
             }}
@@ -374,7 +426,7 @@ const App: React.FC = () => {
         >
           <Plus size={24} />
         </button>
-        <NavBtn active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} icon={<Landmark size={20} />} label={t.savings} />
+        <NavBtn active={activeTab === 'savings'} onClick={() => setActiveTab('savings'} icon={<Landmark size={20} />} label={t.savings} />
         <NavBtn active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircle size={20} />} label={t.profile} />
       </div>
 
@@ -671,15 +723,24 @@ const ProfileView = ({ profile, settings, t, onUpdateProfile, onLang, onTheme, o
           <MenuBtn icon={<Languages size={18} />} label={t.language} sub={settings.language === 'bn' ? 'বাংলা' : 'English'} onClick={onLang} />
           <MenuBtn icon={settings.theme === 'light' ? <Sun size={18} /> : <Moon size={18} />} label={t.theme} sub={settings.theme === 'light' ? t.light : t.dark} onClick={onTheme} border />
         </div>
+
         <h3 className="font-bold text-slate-400 text-[10px] uppercase tracking-widest ml-1 mt-6">{t.backup}</h3>
         <div className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-100 dark:border-slate-800 overflow-hidden">
-          <MenuBtn icon={<Download size={18} />} label={t.fullBackup} onClick={() => onExport('all')} />
+          <MenuBtn icon={<Database size={18} />} label={t.fullBackup} onClick={() => onExport('all')} />
           <label className="flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer border-t dark:border-slate-800">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center"><Upload size={18} /></div>
             <span className="font-bold text-sm">{t.fullRestore}</span>
-            <input type="file" className="hidden" onChange={(e: any) => onImport(e, 'all')} />
+            <input type="file" className="hidden" accept=".json" onChange={(e: any) => onImport(e)} />
           </label>
         </div>
+
+        <h3 className="font-bold text-slate-400 text-[10px] uppercase tracking-widest ml-1 mt-6">{t.selectiveBackup}</h3>
+        <div className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-100 dark:border-slate-800 overflow-hidden">
+          <MenuBtn icon={<FileJson size={18} className="text-emerald-500" />} label={t.transactionsBackup} onClick={() => onExport('transactions')} />
+          <MenuBtn icon={<FileJson size={18} className="text-amber-500" />} label={t.savingsBackup} onClick={() => onExport('savings')} border />
+          <MenuBtn icon={<FileJson size={18} className="text-rose-500" />} label={t.debtsBackup} onClick={() => onExport('debts')} border />
+        </div>
+
         <MenuBtn icon={<Info size={18} />} label={t.developerInfo} onClick={onDev} border={false} className="mt-4 bg-white dark:bg-slate-900 rounded-[32px] border dark:border-slate-800" />
       </div>
     </div>
